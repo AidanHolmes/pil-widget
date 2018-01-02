@@ -24,7 +24,7 @@ class RadialBar(object):
 
     def __init__(self, size=(50,50), width=4, title=None, units=None, imgtype='P',
                  barcol=0, valuecol=1, fillcol=2, bgcol = 1, outlinecol=1, emptycol=2, titlecol=1,
-                 font = 'FreeSans.ttf', fontsize=12):
+                 font = 'FreeSans.ttf', fontsize=12, antialias=False):
         self._size = (size[0]-1, size[1]-1) # use size as min and max pixel extents
         self.title = title
         self.unit = units
@@ -43,6 +43,7 @@ class RadialBar(object):
         self._maxval = 100.0
         self._precision = 1
         self._squareindicator = True
+        self._antialias = antialias
 
         self._img = Image.new(imgtype, size)
         self._draw = ImageDraw.Draw(self._img)
@@ -182,35 +183,30 @@ class RadialBar(object):
         if not self._title is None:
             w, h = self._font.getsize(self._title)
             titleheight = h + 1 # Add 1px border
-            xtxt = (self._size[0] - w) / 2
-            self._draw.text( (xtxt,0), self._title, fill=self._titlecol, font=self._font)
 
         x_top = 0
         y_top = titleheight
         x_bottom = self._size[0]
         y_bottom = self._size[1]
         if self._squareindicator:
-            # even the sides to appear circular and centred
+            # even the sides to appear circular and central
             # Which is the shortest side?
             width = (x_bottom - x_top)
             height = (y_bottom - y_top)
             if width > height: 
                 # Scale width
-                x_top = x_top + ((width - height) / 2)
-                x_bottom = x_bottom - ((width - height) / 2)
+                x_top = int(x_top + ((width - height) / 2))
+                x_bottom = int(x_bottom - ((width - height) / 2))
             elif height > width:
                 # Scale height
-                y_top = y_top + ((height - width) / 2)
-                y_bottom = y_bottom - ((height - width) / 2)
+                y_top = int(y_top + ((height - width) / 2))
+                y_bottom = int(y_bottom - ((height - width) / 2))
             #else they are the same and do nothing
 
         return ((x_top,y_top),(x_bottom,y_bottom))
 
-        
-    def render(self):
-        'Render and return a PIL image'
+    def rendergraph(self, bounds):
         rng = self._maxval - self._minval
-
         degree = 0
         if (self._val <= self._minval): degree = 0
         elif (self._val >= self._maxval): degree = 360
@@ -220,29 +216,46 @@ class RadialBar(object):
         degree_end = (degree - 90)
         if degree_end < 0:
             degree_end = 270 + degree
-        
-        # Clear background for entire image
-        self._draw.rectangle(((0,0),self._size), fill=self._background)
 
-        bounds = self.define_bounding_area()
+        (cw,ch) = (bounds[1][0] - bounds[0][0], bounds[1][1] - bounds[0][1])
+        if self._antialias: 
+            (cw,ch) = (cw*2,ch*2)
+        ctlimg = Image.new(self._imgtype, (cw,ch), color=self._background)
+        ctldraw = ImageDraw.Draw(ctlimg)
+        ctlextents = (ctlimg.width-1, ctlimg.height-1)
 
         # Exception, if zero degrees then skip rendering the bar
         if degree == 0:
-            self._draw.ellipse( (bounds[0], bounds[1]), fill=self._nobar)
+            ctldraw.ellipse( ((0,0),ctlextents), fill=self._nobar)
         else: # Render the progress bar
-            self._draw.ellipse( (bounds[0], bounds[1]), fill=self._bar)
+            ctldraw.ellipse( ((0,0), ctlextents), fill=self._bar)
             if not degree == 360:
                 # Overwrite the indicator with a pie slice unless it's totally full
-                self._draw.pieslice( (bounds[0], bounds[1]), degree_end, 270, self._nobar)
+                ctldraw.pieslice( ((0,0), ctlextents), degree_end, 270, self._nobar)
 
         # Draw internal ellipse
-        self._draw.ellipse(((self._width+bounds[0][0],self._width+bounds[0][1]),
-                            (bounds[1][0]-self._width, bounds[1][1]-self._width)),
-                           fill=self._fill, outline=self._outline)
+        barwidth = self._width
+        if self._antialias: barwidth = self._width * 2
+        ctldraw.ellipse(((barwidth,barwidth),
+                         (ctlimg.width-barwidth, ctlimg.height-barwidth)),
+                         fill=self._fill, outline=self._outline)
 
         # Draw final border around external ellipse
-        self._draw.ellipse( (bounds[0], bounds[1]), fill=None, outline=self._outline)
+        ctldraw.ellipse( ((0,0), ctlextents), fill=None, outline=self._outline)
+		
+        # paste image back to main control
+        if self._antialias:
+            ctlimg = ctlimg.resize((int(ctlimg.width/2), int(ctlimg.height/2)), Image.LANCZOS)
+        self._img.paste(ctlimg, (bounds[0][0], bounds[0][1]))
+	
+    def rendertitle(self):
+        # render the title text
+        if self._title is not None:
+            w, h = self._font.getsize(self._title)
+            xtxt = int((self._size[0] - w) / 2)
+            self._draw.text( (xtxt,0), self._title, fill=self._titlecol, font=self._font)
 
+    def rendervalue(self,bounds):
         # Format number as integer or floating point according to defined precision
         txtformat = '{0:.0f}{1}'
         if not self._isint:
@@ -259,7 +272,25 @@ class RadialBar(object):
         x = bounds[0][0] + (((bounds[1][0] - bounds[0][0]) - w) /2)
         y = bounds[0][1] + (((bounds[1][1] - bounds[0][1]) - h) /2)
         
-        self._draw.text( (x,y), txt, fill=self._text, font=self._font)
+        self._draw.text( (x,y), txt, fill=self._text, font=self._font)        
+
+    def render(self):
+        'Render and return a PIL image'
+        # Clear background for entire image
+        self._draw.rectangle(((0,0),self._size), fill=self._background)
+        
+		# Define the drawing area for the control without title and considering
+		# options to maintain aspect
+        bounds = self.define_bounding_area()
+		
+		# Draw the radial bar image
+        self.rendergraph(bounds)
+
+		# Draw title text
+        self.rendertitle()
+		
+		# Draw value and any specified label
+        self.rendervalue(bounds)
 
         # Return the rendered image
         return self._img
