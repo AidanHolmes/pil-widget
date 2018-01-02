@@ -18,6 +18,7 @@
 
 
 from PIL import Image, ImageDraw, ImageFont
+import sys
 
 class RadialBar(object):
 
@@ -248,7 +249,10 @@ class RadialBar(object):
             txtformat = '{0:.' + "{0:d}".format(self._precision) + 'f}{1}'
 
         # Encode/decode UTF8 dance (needed for such things as degree symbols)
-        txt = txtformat.format(self._val, self._units.encode('utf-8')).decode('utf-8')                               
+        if sys.version_info[0] < 3:
+            txt = txtformat.format(self._val, self._units.encode('utf-8')).decode('utf-8')
+        else:
+            txt = txtformat.format(self._val, self._units)
         w, h = self._font.getsize(txt)
 
         # render text centrally
