@@ -16,6 +16,8 @@ size - a tuple to define the width and height of the widget
 
 width - width of the progress bar in pixels
 
+padding - border padding in pixels around the indicator
+
 title - optional text title. Set to None if not required
 
 units - optional text to display after the value. Set to None to hide
@@ -72,6 +74,9 @@ Set the unit specifier which follows the value number. Set to None or an empty s
 #### bar_width (read/write)
 Change or read the bar width set for the widget. Changes will be reflected in the next call to render()
 Can throw exceptions.
+
+#### padding (read/write)
+Query or change the padding value used to render the graphic. Pads edges around the indicator graphic
 
 #### value (read/write)
 Set or read the integer or floating value specified for the control. Integer values will not display a decimal point. Floating point numbers will display according to the precision attribute.

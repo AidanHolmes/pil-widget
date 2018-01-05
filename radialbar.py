@@ -22,13 +22,14 @@ import sys
 
 class RadialBar(object):
 
-    def __init__(self, size=(50,50), width=4, title=None, units=None, imgtype='P',
+    def __init__(self, size=(50,50), width=4, padding=1, title=None, units=None, imgtype='P',
                  barcol=0, valuecol=1, fillcol=2, bgcol = 1, outlinecol=1, emptycol=2, titlecol=1,
                  font = 'FreeSans.ttf', fontsize=12, antialias=False):
         self._size = (size[0]-1, size[1]-1) # use size as min and max pixel extents
         self.title = title
         self.unit = units
         self.bar_width = width
+        self.padding = padding
         self._bar = barcol
         self._text = valuecol
         self._titlecol = titlecol
@@ -144,6 +145,18 @@ class RadialBar(object):
         if width < 0:
             raise ValueError("Width must be a positive value")
         self._width = width
+		
+    @property
+    def padding(self):
+        return self._padding
+
+    @padding.setter
+    def padding(self, pad):
+        if not isinstance(pad, int):
+            raise TypeError("Padding must be an integer")
+        if pad < 0:
+            raise ValueError("Padding must be a positive value")
+        self._padding = pad
 
     @property
     def value(self):
@@ -203,6 +216,11 @@ class RadialBar(object):
                 y_bottom = int(y_bottom - ((height - width) / 2))
             #else they are the same and do nothing
 
+        # Add padding
+        x_top = x_top + self._padding
+        y_top = y_top + self._padding
+        x_bottom = x_bottom - self._padding
+        y_bottom = y_bottom - self._padding
         return ((x_top,y_top),(x_bottom,y_bottom))
 
     def rendergraph(self, bounds):
