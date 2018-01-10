@@ -16,9 +16,14 @@
 #
 #    Email - aholmes@orbitalfruit.co.uk
 
+try:
+    import Tkinter as tk
+except ModuleNotFoundError:
+    import tkinter as tk
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 import sys
+import math
 
 class RadialBar(object):
 
@@ -49,6 +54,11 @@ class RadialBar(object):
         self._img = Image.new(imgtype, size)
         self._draw = ImageDraw.Draw(self._img)
         self.set_font(font, fontsize)
+		
+		# Values to support click events for window managers
+        self._centre = (self._size[0]/2,self._size[1]/2)
+        self._outer_radius = self._centre
+        self._inner_radius = ((self._outer_radius[0] - self.bar_width), (self._outer_radius[1] - self.bar_width))
 
     @property
     def bar_col(self):
@@ -111,7 +121,10 @@ class RadialBar(object):
         return self._img.size
 
     def set_font(self, fontname, size):
-        self._font = ImageFont.truetype(fontname, size)
+        try:
+            self._font = ImageFont.truetype(fontname, size)
+        except IOError:
+            pass
     
     @property
     def title(self):
@@ -221,6 +234,8 @@ class RadialBar(object):
         y_top = y_top + self._padding
         x_bottom = x_bottom - self._padding
         y_bottom = y_bottom - self._padding
+        self._outer_radius = ((x_bottom - x_top) / 2, (y_bottom - y_top) / 2)
+        self._inner_radius = ((self._outer_radius[0] - self.bar_width), (self._outer_radius[1] - self.bar_width))
         return ((x_top,y_top),(x_bottom,y_bottom))
 
     def rendergraph(self, bounds):
@@ -231,11 +246,12 @@ class RadialBar(object):
         else:
             degree = ((self._val - self._minval) * 360) / rng
 
-        degree_end = (degree - 90)
+        degree_end = int(degree - 90)
         if degree_end < 0:
             degree_end = 270 + degree
 
         (cw,ch) = (bounds[1][0] - bounds[0][0], bounds[1][1] - bounds[0][1])
+        self._centre = ((bounds[0][0]+(cw/2)), (bounds[0][1]+(ch/2))) # Save this for window event detection
         if self._antialias: 
             (cw,ch) = (cw*2,ch*2)
         ctlimg = Image.new(self._imgtype, (cw,ch), color=self._background)
@@ -313,3 +329,64 @@ class RadialBar(object):
         # Return the rendered image
         return self._img
         
+class TkRadialBar(tk.Label, RadialBar):
+	ClickStatus = 1
+	ClickProgress = 2
+	ClickBackground = 3
+	
+	def __init__(self, master):
+		# Setup as a full colour control and define default colours to use
+		RadialBar.__init__(self, size=(150,150), font="arial.ttf", fontsize=12, imgtype='RGB', antialias=True)
+		tk.Label.__init__(self, master, bg="white")
+		self.bar_width = 20
+		self.bar_col = (255,0,0)
+		self.empty_col = (255,255,255)
+		self.background_col = (255,255,255)
+		self.outline_col = (0,0,0)
+		self.value_col = (0,0,0)
+		self.title_col = (0,0,0)
+		self.fill_col = (200,200,200)
+		self.set_range(15,40)
+		
+		self.bind("<ButtonPress-1>", self.activateclick)
+		self.bind("<ButtonRelease-1>", self.activateclick)
+		self.bind("<ButtonPress-3>", self.activateclick)
+		self.bind("<ButtonRelease-3>", self.activateclick)
+		
+		self._lastclick = (TkRadialBar.ClickStatus, tk.EventType.ButtonRelease)
+		
+	def on_click_status(self, event):
+		pass
+		
+	def on_click_progress(self, event):
+		pass
+		
+	def activateclick(self, event):
+		xdis = self._centre[0] - event.x
+		ydis = self._centre[1] - event.y
+
+		lastclick = (TkRadialBar.ClickBackground, event.type)
+		
+		test = ( math.pow(event.x - self._centre[0],2) / math.pow(self._inner_radius[0],2) ) \
+			+ ( math.pow(event.y - self._centre[1],2) / math.pow(self._inner_radius[1],2) )
+				
+		if test <= 1:
+			if self._lastclick[0] == TkRadialBar.ClickStatus and self._lastclick[1] == tk.EventType.ButtonPress and event.type == tk.EventType.ButtonRelease:
+				self.on_click_status(event)
+			lastclick = (TkRadialBar.ClickStatus, event.type)
+		else:
+			test2 = ( math.pow(event.x - self._centre[0],2) / math.pow(self._outer_radius[0],2) ) \
+				+ ( math.pow(event.y - self._centre[1],2) / math.pow(self._outer_radius[1],2) )
+			if test > 1 and test2 <= 1:
+				if self._lastclick[0] == TkRadialBar.ClickProgress and self._lastclick[1] == tk.EventType.ButtonPress and event.type == tk.EventType.ButtonRelease:
+					self.on_click_progress(event)
+				lastclick = (TkRadialBar.ClickProgress, event.type)
+				
+		self._lastclick = lastclick
+	
+	def render(self):
+		'Render a Tk Photo Image'
+		# hold a reference to the image in the class otherwise
+		# the photo image will be lost
+		self.image = ImageTk.PhotoImage(RadialBar.render(self))
+		self.configure(image=self.image)
